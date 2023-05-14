@@ -21,43 +21,52 @@ namespace ContosoUniversity.Pages.Departments
 
         [BindProperty]
       public Department Department { get; set; }
+      public string ConcurrencyErrorMessage { get; set; }
 
-        public async Task<IActionResult> OnGetAsync(int? id)
+        public async Task<IActionResult> OnGetAsync(int? id, bool? concurrencyError)
         {
-            if (id == null || _context.Departments == null)
+            Department = await _context.Departments
+                .Include(d => d.Administrator)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.DepartmentID == id);
+
+            if (Department == null)
             {
                 return NotFound();
             }
 
-            var department = await _context.Departments.FirstOrDefaultAsync(m => m.DepartmentID == id);
-
-            if (department == null)
+            if (concurrencyError.GetValueOrDefault())
             {
-                return NotFound();
-            }
-            else 
-            {
-                Department = department;
+                ConcurrencyErrorMessage = "The record you attempted to delete "
+                    + "was modified by anoter user after you selected delete. "
+                    + "The delete operation was canceled and the current values in the  "
+                    + "database have been displayed. If you still want to delete this "
+                    + "record, click the Delete button again.";
             }
             return Page();
         }
 
-        public async Task<IActionResult> OnPostAsync(int? id)
+        public async Task<IActionResult> OnPostAsync(int id)
         {
-            if (id == null || _context.Departments == null)
+            try
             {
-                return NotFound();
-            }
-            var department = await _context.Departments.FindAsync(id);
+                if (await _context.Departments.AnyAsync(
+                    m => m.DepartmentID == id))
+                {
+                    //Department .ConcurrencyToken value is from when the entity
+                    // was fetched. If it doesn't match the DB, a
+                    //DBUpdateConcurrencyException exception is thrown.
+                    _context.Departments.Remove(Department);
+                    await _context.SaveChangesAsync();
+                }
 
-            if (department != null)
+                return RedirectToPage("./Index");
+            }
+            catch (DbUpdateConcurrencyException)
             {
-                Department = department;
-                _context.Departments.Remove(Department);
-                await _context.SaveChangesAsync();
+                return RedirectToPage("./Delete",
+                    new { concurrencyError = true, id = id});   
             }
-
-            return RedirectToPage("./Index");
         }
     }
 }
